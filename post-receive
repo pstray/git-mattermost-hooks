@@ -1,0 +1,5 @@
+#! /bin/bash
+
+# https://raw.githubusercontent.com/42wim/matterstuff/master/git-mattermost-hook/git-mattermost-hook
+# /usr/share/git-core/contrib/hooks/post-receive-email
+
