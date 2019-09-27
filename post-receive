@@ -1,5 +1,229 @@
 #! /bin/bash
 
-# https://raw.githubusercontent.com/42wim/matterstuff/master/git-mattermost-hook/git-mattermost-hook
-# /usr/share/git-core/contrib/hooks/post-receive-email
+# based on post-receive-email
 
+# https://raw.githubusercontent.com/42wim/matterstuff/master/git-mattermost-hook/git-mattermost-hook
+
+# Config
+# ------
+# g2mm.channel
+#   This is the channel to post messages to, define this to log
+#   messages, leave it blank to not.
+# g2mm.url
+#   The url used for posting to mattermost.  This must be defined for
+#   posting to work.
+# g2mm.reponame
+#   Set this if you want something other then the repo name as a prefix
+
+# ---------------------------- Functions
+
+post2matter() {
+    [ -z "$mmhookurl" ] || return 1
+    local data
+    if [ "$1" ]; then
+	data="$1"
+    else
+	data=$(cat | sed ':a;N;$!ba;s/\n/, /g')
+    fi
+    curl \
+	-X POST \
+	-H 'Content-Type: application/json' \
+	-d "{$data}" \
+	"$mmhookurl"
+
+}
+
+escape_text() {
+    sed ':a;N;$!ba;s/\n$//;s/\n/\\n/g;s/"/\\"/g;'
+}
+
+do_notify() {
+
+    # --- Arguments
+    oldrev=$(git rev-parse $1)
+    newrev=$(git rev-parse $2)
+    refname="$3"
+
+    # --- Interpret
+    # 0000->1234 (create)
+    # 1234->2345 (update)
+    # 2345->0000 (delete)
+    if expr "$oldrev" : '0*$' >/dev/null; then
+	change_type="create"
+    else
+	if expr "$newrev" : '0*$' >/dev/null; then
+	    change_type="delete"
+	else
+	    change_type="update"
+	fi
+    fi
+
+    # --- Get the revision types
+    newrev_type=$(git cat-file -t "$newrev" 2> /dev/null)
+    oldrev_type=$(git cat-file -t "$oldrev" 2> /dev/null)
+    case "$change_type" in
+	create|update)
+	    rev="$newrev"
+	    rev_type="$newrev_type"
+	    ;;
+	delete)
+	    rev="$oldrev"
+	    rev_type="$oldrev_type"
+	    ;;
+    esac
+
+    # The revision type tells us what type the commit is, combined with
+    # the location of the ref we can decide between
+    #  - working branch
+    #  - tracking branch
+    #  - unannoted tag
+    #  - annotated tag
+    case "$refname,$rev_type" in
+	refs/tags/*,commit)
+	    # un-annotated tag
+	    refname_type="tag"
+	    short_refname=${refname##refs/tags/}
+	    ;;
+	refs/tags/*,tag)
+	    # annotated tag
+	    refname_type="annotated tag"
+	    short_refname=${refname##refs/tags/}
+	    ;;
+	refs/heads/*,commit)
+	    # branch
+	    refname_type="branch"
+	    short_refname=${refname##refs/heads/}
+	    ;;
+	refs/remotes/*,commit)
+	    # tracking branch
+	    refname_type="tracking branch"
+	    short_refname=${refname##refs/remotes/}
+	    return 1
+	    ;;
+	*)
+	    # Anything else (is there anything else?)
+	    return 1
+	    ;;
+    esac
+
+    # repo name
+    if [ -n "$GL_REPO" ]; then
+	repo="$GL_REPO"
+    else
+	repodir=$(basename $PWD)
+	if [ "$repodir" == ".git" ]; then
+	    repodir=$(basename $(dirname $PWD))
+	fi
+	repo=${repodir%.git}
+    fi
+
+    reponame=$(git config g2mm.reponame || echo $repo)
+
+    # Find the user
+    if [ "$GL_USER" ]; then
+	user="$GL_USER"
+    else
+	user="$USER"
+    fi
+
+    s=""
+    case "$change_type" in
+	create)
+	    header="New ${refname_type} *${short_refname}* has been created in ${reponame}"
+	    ;;
+	delete)
+	    header="$(tr '[:lower:]' '[:upper:]' <<< ${refname_type:0:1})${refname_type:1} *$short_refname* has been deleted from ${reponame}"
+	    ;;
+	update)
+	    num=$(git log --pretty=oneline ${1}..${2} | wc -l)
+	    start="$oldrev"
+	    if [ $num -gt 1 ]; then
+		header="${num} new commits *pushed* to ${short_refname} in ${reponame}"
+		s="s"
+	    else
+		header="A new commit has been *pushed* to ${short_refname} in ${reponame}"
+	    fi
+	    ;;
+    esac
+
+    logs=
+    if [ "$change_type" != "delete" && "$refname_type" == "branch" ]; then
+
+	[ "$change_type" == "update" ] && start=$oldrev || start=HEAD
+	end=$newrev
+
+	logs=$(git log --stat "${start}..${end}" | escape_text)
+	loglines=$(git log --pretty=oneline "${start}..${end}")
+    fi
+
+    (
+	echo -n '"text": "'
+	(
+	    echo -n "${header}"
+	    if [ "$loglines" ]; then
+		echo
+		echo '```'
+		echo "$loglines"
+		echo '```'
+	    fi
+	) | escape_text
+	echo '"'
+
+	# echo '"channel": "'"git-logs"'"
+	echo -n '"username": "'
+	echo -n "$user" | escape_text
+	echo '"'
+
+	# icon_url - override icon
+	# icon_emoji - override icon with emoji
+	# attachments - huge blob of json
+
+	if [ -n "$logs" ]; then
+	    echo -n '"props": { "card": "'
+	    echo "$logs" | escape_text
+	    echo '"'
+	fi
+    ) | post2matter
+
+    return 0
+}
+
+
+# ---------------------------- main()
+
+if [ -z "$GIT_DIR" ]; then
+    GIT_DIR=$(git rev-parse --git-dir 2>/dev/null)
+fi
+
+if [ -z "$GIT_DIR" ]; then
+    echo "fatal: post-receive: GIT_DIR not set" >&2
+    exit 1
+fi
+
+projectdesc=$(sed -ne '1p' "$GIT_DIR/description" 2>/dev/null)
+case "$projectdesc" in
+    "Unnamed repository"* | "")
+	projectdesc="$GL_REPO"
+	;;
+esac
+
+# if no channel... just quit
+mmchannel=$(git config g2mm.channel)
+if [ -z "$mmchannel" ]; then
+    exit
+fi
+
+# if we have a channel, we need an url
+mmhookurl=$(git config g2mm.url)
+if [ -z "$mmhookurl" ]; then
+    echo "g2mm.url not defined, so no posting to $mmchannel..." >&2
+    exit
+fi
+
+#custom_showrev=$(git config g2mm.showrev)
+#diffopts=$(git config g2mm.diffopts)
+#: ${diffopts:="--stat --summary --find-copies-harder"}
+
+while read oldrev newrev refname; do
+    do_notify $oldrev $newrev $refname
+done
