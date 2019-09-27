@@ -147,7 +147,7 @@ do_notify() {
     esac
 
     logs=
-    if [ "$change_type" != "delete" && "$refname_type" == "branch" ]; then
+    if [ "$change_type" != "delete" -a "$refname_type" == "branch" ]; then
 
 	[ "$change_type" == "update" ] && start=$oldrev || start=HEAD
 	end=$newrev
