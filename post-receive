@@ -18,7 +18,7 @@
 # ---------------------------- Functions
 
 post2matter() {
-    [ -z "$mmhookurl" ] || return 1
+    [ -n "$mmhookurl" ] || return 1
     local data
     if [ "$1" ]; then
 	data="$1"
