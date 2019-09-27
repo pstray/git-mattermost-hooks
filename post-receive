@@ -177,7 +177,7 @@ do_notify() {
 	# attachments - huge blob of json
 
 	if [ -n "$logs" ]; then
-	    echo '"props": { "card": "'"$(echo "$logs" | escape_text)"'" }'
+	    echo '"props": { "card": "```\n'"$(echo "$logs" | escape_text)"'```" }'
 	fi
     ) | post2matter
 
