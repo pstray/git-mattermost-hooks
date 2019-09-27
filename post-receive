@@ -157,17 +157,15 @@ do_notify() {
     fi
 
     (
-	echo -n '"text": "'
-	(
-	    echo -n "${header}"
-	    if [ "$loglines" ]; then
-		echo
-		echo '```'
-		echo "$loglines"
-		echo '```'
-	    fi
-	) | escape_text
-	echo '"'
+	echo '"text": "'$((
+			     echo -n "${header}"
+			     if [ "$loglines" ]; then
+				 echo
+				 echo '```'
+				 echo "$loglines"
+				 echo -n '```'
+			     fi
+			 ) | escape_text)'"'
 
 	# echo '"channel": "'"git-logs"'"
 	echo -n '"username": "'
