@@ -29,7 +29,7 @@ post2matter() {
 	-X POST \
 	-H 'Content-Type: application/json' \
 	-d "{$data}" \
-	"$mmhookurl"
+	"$mmhookurl" >& /dev/null
 
 }
 
