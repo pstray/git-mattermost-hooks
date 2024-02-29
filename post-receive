@@ -23,7 +23,7 @@ post2matter() {
     if [ "$1" ]; then
 	data="$1"
     else
-	data=$(cat | sed ':a;N;$!ba;s/\n/, /g')
+	data="$(cat | sed ':a;N;$!ba;s/\n/, /g')"
     fi
     curl \
 	-X POST \
@@ -152,8 +152,8 @@ do_notify() {
 	[ "$change_type" == "update" ] && start=$oldrev || start=HEAD
 	end=$newrev
 
-	logs=$(git log --stat "${start}..${end}" | escape_text)
-	loglines=$(git log --pretty=oneline "${start}..${end}")
+	logs="$(git log --stat "${start}..${end}" | escape_text)"
+	loglines="$(git log --pretty=oneline "${start}..${end}")"
     fi
 
     (
